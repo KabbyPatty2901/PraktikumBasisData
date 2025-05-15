@@ -2,7 +2,6 @@ package com.example.bdsqltester.scenes.user;
 
 import com.example.bdsqltester.datasources.GradingDataSource;
 import com.example.bdsqltester.datasources.MainDataSource;
-import com.example.bdsqltester.datasources.TableDataSource;
 import com.example.bdsqltester.dtos.Assignment;
 import com.example.bdsqltester.scenes.LoginController;
 import javafx.beans.property.SimpleStringProperty;
@@ -23,7 +22,6 @@ public class UserController{
     //static connection biar ga crash klo terlalu sering di pencet
 
     Connection conn = GradingDataSource.getConnection();
-    Connection t = TableDataSource.getConnection();
     Connection c = MainDataSource.getConnection();
 
     private String username;
@@ -164,14 +162,14 @@ public class UserController{
                 rs.next();
 
                 //Ambil tabel jawaban
-                PreparedStatement ans = t.prepareStatement(rs.getString(1),
+                PreparedStatement ans = conn.prepareStatement(rs.getString(1),
                         ResultSet.TYPE_SCROLL_INSENSITIVE,
                         ResultSet.CONCUR_READ_ONLY);
                 ResultSet ts = ans.executeQuery();
                 ts.last();
 
                 //Ambil Jawaban User
-                PreparedStatement jaw = t.prepareStatement(answerKeyField.getText(),
+                PreparedStatement jaw = conn.prepareStatement(answerKeyField.getText(),
                         ResultSet.TYPE_SCROLL_INSENSITIVE,
                         ResultSet.CONCUR_READ_ONLY);
                 ResultSet js = jaw.executeQuery();
@@ -272,7 +270,7 @@ public class UserController{
         ArrayList<String> headers = new ArrayList<>(); // To check if any columns were returned
 
         // Use try-with-resources for automatic closing of Connection, Statement, ResultSet
-        try (Connection conn = TableDataSource.getConnection();
+        try (Connection conn = GradingDataSource.getConnection();
              Statement stmt = conn.createStatement();
              ResultSet rs = stmt.executeQuery(answerKeyField.getText())) {
 
