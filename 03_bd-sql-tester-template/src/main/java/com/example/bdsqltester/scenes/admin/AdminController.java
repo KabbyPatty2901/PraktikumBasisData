@@ -2,7 +2,9 @@ package com.example.bdsqltester.scenes.admin;
 
 import com.example.bdsqltester.datasources.GradingDataSource;
 import com.example.bdsqltester.datasources.MainDataSource;
+import com.example.bdsqltester.datasources.TableDataSource;
 import com.example.bdsqltester.dtos.Assignment;
+import com.example.bdsqltester.scenes.LoginController;
 import javafx.beans.property.SimpleStringProperty;
 import javafx.collections.FXCollections;
 import javafx.collections.ObservableList;
@@ -16,7 +18,7 @@ import javafx.stage.Stage;
 import java.sql.*;
 import java.util.ArrayList;
 
-public class AdminController {
+public class AdminController{
 
     @FXML
     private TextArea answerKeyField;
@@ -175,6 +177,20 @@ public class AdminController {
         // Refresh the assignment list
         refreshAssignmentList();
     }
+    @FXML
+    void onDeleteClick(){
+        try (Connection c = MainDataSource.getConnection()) {
+            PreparedStatement stmt = c.prepareStatement("DELETE FROM assignments WHERE id = ?");
+            stmt.setInt(1, Integer.parseInt(idField.getText()));
+            stmt.executeUpdate();
+        } catch (Exception e) {
+            Alert alert = new Alert(Alert.AlertType.ERROR);
+            alert.setTitle("Error");
+            alert.setHeaderText("Database Error");
+            alert.setContentText(e.toString());
+        }
+        refreshAssignmentList();
+    }
 
     @FXML
     void onShowGradesClick(ActionEvent event) {
@@ -196,6 +212,7 @@ public class AdminController {
         // Create a new window/stage
         Stage stage = new Stage();
         stage.setTitle("Query Results");
+        //
 
         // Display in a table view.
         TableView<ArrayList<String>> tableView = new TableView<>();
@@ -204,7 +221,7 @@ public class AdminController {
         ArrayList<String> headers = new ArrayList<>(); // To check if any columns were returned
 
         // Use try-with-resources for automatic closing of Connection, Statement, ResultSet
-        try (Connection conn = GradingDataSource.getConnection();
+        try (Connection conn = TableDataSource.getConnection();
              Statement stmt = conn.createStatement();
              ResultSet rs = stmt.executeQuery(answerKeyField.getText())) {
 

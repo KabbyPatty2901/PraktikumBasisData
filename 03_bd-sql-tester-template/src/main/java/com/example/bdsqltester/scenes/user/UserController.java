@@ -2,7 +2,9 @@ package com.example.bdsqltester.scenes.user;
 
 import com.example.bdsqltester.datasources.GradingDataSource;
 import com.example.bdsqltester.datasources.MainDataSource;
+import com.example.bdsqltester.datasources.TableDataSource;
 import com.example.bdsqltester.dtos.Assignment;
+import com.example.bdsqltester.scenes.LoginController;
 import javafx.beans.property.SimpleStringProperty;
 import javafx.collections.FXCollections;
 import javafx.collections.ObservableList;
@@ -16,7 +18,22 @@ import javafx.stage.Stage;
 import java.sql.*;
 import java.util.ArrayList;
 
-public class UserController {
+public class UserController{
+
+    //static connection biar ga crash klo terlalu sering di pencet
+
+    Connection conn = GradingDataSource.getConnection();
+    Connection t = TableDataSource.getConnection();
+    Connection c = MainDataSource.getConnection();
+
+    private String username;
+
+    public void setUser(String username){
+        this.username = username;
+    }
+
+    @FXML
+    private Label scoreField;
 
     @FXML
     private TextArea answerKeyField;
@@ -35,12 +52,22 @@ public class UserController {
 
     private final ObservableList<Assignment> assignments = FXCollections.observableArrayList();
 
+    public UserController() throws SQLException {
+    }
+
     @FXML
     void initialize() {
         // Set idField to read-only
         idField.setEditable(false);
         idField.setMouseTransparent(true);
         idField.setFocusTraversable(false);
+
+        nameField.setEditable(false);
+        nameField.setMouseTransparent(true);
+        nameField.setFocusTraversable(false);
+
+        instructionsField.setEditable(false);
+
 
         // Populate the ListView with assignment names
         refreshAssignmentList();
@@ -72,7 +99,7 @@ public class UserController {
         assignments.clear();
 
         // Re-populate the ListView with assignment names
-        try (Connection c = MainDataSource.getConnection()) {
+        try {
             Statement stmt = c.createStatement();
             ResultSet rs = stmt.executeQuery("SELECT * FROM assignments");
 
@@ -106,7 +133,6 @@ public class UserController {
             // Ignore, idField is empty
         }
     }
-
     void onAssignmentSelected(Assignment assignment) {
         // Set the id field
         idField.setText(String.valueOf(assignment.id));
@@ -118,52 +144,93 @@ public class UserController {
         instructionsField.setText(assignment.instructions);
 
         // Set the answer key field
-        answerKeyField.setText(assignment.answerKey);
+        answerKeyField.setText("");
+
+        scoreField.setText("");
     }
 
-    @FXML
-    void onNewAssignmentClick(ActionEvent event) {
-        // Clear the contents of the id field
-        idField.clear();
-
-        // Clear the contents of all text fields
-        nameField.clear();
-        instructionsField.clear();
-        answerKeyField.clear();
-    }
 
     @FXML
-    void onSaveClick(ActionEvent event) {
+    void onSubmitClick(ActionEvent event) {
         // If id is set, update, else insert
-        if (idField.getText().isEmpty()) {
-            // Insert new assignment
-            try (Connection c = MainDataSource.getConnection()) {
-                PreparedStatement stmt = c.prepareStatement("INSERT INTO assignments (name, instructions, answer_key) VALUES (?, ?, ?)", Statement.RETURN_GENERATED_KEYS);
-                stmt.setString(1, nameField.getText());
-                stmt.setString(2, instructionsField.getText());
-                stmt.setString(3, answerKeyField.getText());
+        if (!idField.getText().isEmpty()) {
+            // Compare existing assignment
+            try {
+
+                //Ambil Kunci Jawaban
+                PreparedStatement stmt = c.prepareStatement("SELECT answer_key FROM assignments WHERE id = ?");
+                stmt.setInt(1, Integer.parseInt(idField.getText()));
+                ResultSet rs = stmt.executeQuery();
+                rs.next();
+
+                //Ambil tabel jawaban
+                PreparedStatement ans = t.prepareStatement(rs.getString(1),
+                        ResultSet.TYPE_SCROLL_INSENSITIVE,
+                        ResultSet.CONCUR_READ_ONLY);
+                ResultSet ts = ans.executeQuery();
+                ts.last();
+
+                //Ambil Jawaban User
+                PreparedStatement jaw = t.prepareStatement(answerKeyField.getText(),
+                        ResultSet.TYPE_SCROLL_INSENSITIVE,
+                        ResultSet.CONCUR_READ_ONLY);
+                ResultSet js = jaw.executeQuery();
+                js.last();
+
+                ResultSetMetaData tsmeta = ts.getMetaData();
+                ResultSetMetaData jsmeta = js.getMetaData();
+
+                //bandingin row dan kolom
+                try {
+                    if (ts.getRow() == js.getRow() && tsmeta.getColumnCount() == jsmeta.getColumnCount()) {
+                        ts.beforeFirst();
+                        js.beforeFirst();
+                        boolean urut = true;
+                        while (js.next()) {
+                            boolean berhasil = false;
+                            while (ts.next()) {
+                                boolean sama = true;
+                                for (int i = 1; i <= jsmeta.getColumnCount(); i++) {
+                                    if (!ts.getString(i).equals(js.getString(i))) {
+                                        sama = false;
+                                        urut = false;
+                                        break;
+                                    }
+                                }
+                                if (sama) {
+                                    berhasil = true;
+                                    break;
+                                }
+                            }
+                            if (!urut){
+                                ts.beforeFirst();
+                            }
+                            if (!berhasil){
+                                break;
+                            }
+                        }
+                        if (urut){
+                            scoreField.setText("100");
+                        }
+                        else scoreField.setText("50");
+                    } else {
+                        throw new RuntimeException();
+                    }
+                }catch (RuntimeException e){
+                    scoreField.setText("0");
+                }
+                stmt = c.prepareStatement(
+                        "INSERT INTO grades (assignment_id, user_id, grade) " +
+                                "VALUES (?, (SELECT id FROM users WHERE username = ? AND role = ?), ?)"
+                );
+
+                stmt.setInt(1, Integer.parseInt(idField.getText()));
+                stmt.setString(2, username );
+                stmt.setString(3, "user");
+                stmt.setInt(4, Integer.parseInt(scoreField.getText()));
+
                 stmt.executeUpdate();
 
-                ResultSet rs = stmt.getGeneratedKeys();
-                if (rs.next()) {
-                    // Get generated id, update idField
-                    idField.setText(String.valueOf(rs.getLong(1)));
-                }
-            } catch (Exception e) {
-                Alert alert = new Alert(Alert.AlertType.ERROR);
-                alert.setTitle("Error");
-                alert.setHeaderText("Database Error");
-                alert.setContentText(e.toString());
-            }
-        } else {
-            // Update existing assignment
-            try (Connection c = MainDataSource.getConnection()) {
-                PreparedStatement stmt = c.prepareStatement("UPDATE assignments SET name = ?, instructions = ?, answer_key = ? WHERE id = ?");
-                stmt.setString(1, nameField.getText());
-                stmt.setString(2, instructionsField.getText());
-                stmt.setString(3, answerKeyField.getText());
-                stmt.setInt(4, Integer.parseInt(idField.getText()));
-                stmt.executeUpdate();
             } catch (Exception e) {
                 Alert alert = new Alert(Alert.AlertType.ERROR);
                 alert.setTitle("Error");
@@ -171,9 +238,6 @@ public class UserController {
                 alert.setContentText(e.toString());
             }
         }
-
-        // Refresh the assignment list
-        refreshAssignmentList();
     }
 
     @FXML
@@ -185,7 +249,11 @@ public class UserController {
             alert.setHeaderText("No Assignment Selected");
             alert.setContentText("Please select an assignment to view grades.");
             alert.showAndWait();
-            return;
+        }
+        else {
+
+
+
         }
     }
 
@@ -204,7 +272,7 @@ public class UserController {
         ArrayList<String> headers = new ArrayList<>(); // To check if any columns were returned
 
         // Use try-with-resources for automatic closing of Connection, Statement, ResultSet
-        try (Connection conn = GradingDataSource.getConnection();
+        try (Connection conn = TableDataSource.getConnection();
              Statement stmt = conn.createStatement();
              ResultSet rs = stmt.executeQuery(answerKeyField.getText())) {
 
